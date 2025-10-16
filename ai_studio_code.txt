@@ -1,130 +1,129 @@
-import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import type { User, Artist, Song, CollectedSong, TradePost, TradeOffer } from '../types';
-import { dataService } from '../services/dataService';
-import { Rarity } from '../types';
-import { mythicSerialService } from '../services/mythicService';
 
-interface IUserContext {
-  currentUser: User | null;
-  users: User[];
-  tradePosts: TradePost[];
-  updateCurrentUser: (userData: Partial<User>) => void;
-  addSongsToCollection: (songs: Song[]) => void;
-  createTradePost: (songToTrade: CollectedSong, seeking: string) => void;
-  makeOffer: (tradePost: TradePost, songsOffered: CollectedSong[]) => void;
-  cancelTradePost: (tradeId: string) => void;
-  reviewOffer: (tradeId: string, offerId: string, decision: 'accepted' | 'declined') => void;
-  addFriend: (friendId: string) => void;
-  removeFriend: (friendId: string) => void;
-  setFavoriteArtists: (artists: Artist[]) => void;
-}
+const USERS_KEY = 'soundmap_users';
+const TRADES_KEY = 'soundmap_trades';
+const CURRENT_USER_ID_KEY = 'soundmap_current_user_id';
 
-export const UserContext = createContext<IUserContext | null>(null);
+class DataService {
 
-export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
-  const [tradePosts, setTradePosts] = useState<TradePost[]>([]);
-  
-  // Initialize data from DataService on mount
-  useEffect(() => {
-    const allUsers = dataService.getUsers();
-    setUsers(allUsers);
-
-    const currentUserId = dataService.getCurrentUserId();
-    const userToSet = allUsers.find(u => u.id === currentUserId) || allUsers[0];
-    setCurrentUser(userToSet);
-    
-    setTradePosts(dataService.getTradePosts());
-  }, []);
-
-  const updateCurrentUser = (userData: Partial<User>) => {
-    if (!currentUser) return;
-    const updatedUser = { ...currentUser, ...userData };
-    setCurrentUser(updatedUser);
-    const updatedUsers = users.map(u => u.id === updatedUser.id ? updatedUser : u);
-    setUsers(updatedUsers);
-    dataService.saveUsers(updatedUsers);
-  };
-
-  const setFavoriteArtists = (artists: Artist[]) => {
-    if (!currentUser) return;
-    updateCurrentUser({ favoriteArtists: artists });
-  };
-  
-  const addSongsToCollection = (songs: Song[]) => {
-      if (!currentUser) return;
-      
-      const newCollectedSongs: CollectedSong[] = songs.map(song => {
-          let serialNumber: number | undefined = undefined;
-          if (song.rarity === Rarity.Mythic) {
-              serialNumber = mythicSerialService.getNextSerialNumber(song.id);
-          }
-          return {
-              id: `${song.id}-${Date.now()}-${Math.random()}`,
-              song,
-              serialNumber,
-              ownerId: currentUser.id
-          };
-      });
-      
-      updateCurrentUser({ collection: [...currentUser.collection, ...newCollectedSongs] });
-  };
-  
-  const addFriend = (friendId: string) => {
-    if (!currentUser || currentUser.friendIds.includes(friendId)) return;
-    updateCurrentUser({ friendIds: [...currentUser.friendIds, friendId] });
-  };
-
-  const removeFriend = (friendId: string) => {
-    if (!currentUser) return;
-    updateCurrentUser({ friendIds: currentUser.friendIds.filter(id => id !== friendId) });
-  };
-
-  const createTradePost = (songToTrade: CollectedSong, seeking: string) => {
-    if (!currentUser) return;
-    const newPost = dataService.createTradePost(currentUser, songToTrade, seeking);
-    setTradePosts(prev => [newPost, ...prev]);
-  };
-  
-  const cancelTradePost = (tradeId: string) => {
-    const updatedPosts = dataService.cancelTradePost(tradeId);
-    setTradePosts(updatedPosts);
+  constructor() {
+    this.seedInitialData();
   }
 
-  const makeOffer = (tradePost: TradePost, songsOffered: CollectedSong[]) => {
-    if (!currentUser) return;
-    const newOffer = dataService.createOffer(tradePost.id, currentUser, songsOffered);
-    
-    const updatedPosts = tradePosts.map(post => {
-      if (post.id === tradePost.id) {
-        return { ...post, offers: [...post.offers, newOffer] };
-      }
-      return post;
-    });
-    setTradePosts(updatedPosts);
-    dataService.saveTradePosts(updatedPosts);
-  };
+  private seedInitialData() {
+    if (!localStorage.getItem(USERS_KEY)) {
+      const initialUsers: User[] = [
+        { id: 'user-1', name: "You", bio: "Just here for the music!", pfpUrl: `https://i.pravatar.cc/150?u=user-1`, collection: [], favoriteArtists: [], friendIds: [] },
+        // NOTE: In a real-world scenario, other users would be fetched from a server.
+        // For this simulation, we only create the primary user.
+      ];
+      
+      this.saveUsers(initialUsers);
+      this.setCurrentUserId(initialUsers[0].id);
+      localStorage.setItem(TRADES_KEY, JSON.stringify([]));
+    }
+  }
+
+  // User methods
+  getUsers = (): User[] => JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+  saveUsers = (users: User[]) => localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  getCurrentUserId = (): string => localStorage.getItem(CURRENT_USER_ID_KEY) || this.getUsers()[0]?.id;
+  setCurrentUserId = (id: string) => localStorage.setItem(CURRENT_USER_ID_KEY, id);
+
+  // TradePost methods
+  getTradePosts = (): TradePost[] => JSON.parse(localStorage.getItem(TRADES_KEY) || '[]');
+  saveTradePosts = (trades: TradePost[]) => localStorage.setItem(TRADES_KEY, JSON.stringify(trades));
+
+  createTradePost(owner: User, songToTrade: CollectedSong, seeking: string): TradePost {
+    const newPost: TradePost = {
+      id: `trade-${Date.now()}`,
+      ownerId: owner.id,
+      ownerName: owner.name,
+      ownerPfpUrl: owner.pfpUrl,
+      songToTrade,
+      seeking,
+      offers: [],
+      status: 'open',
+      createdAt: Date.now()
+    };
+
+    const allTrades = this.getTradePosts();
+    this.saveTradePosts([newPost, ...allTrades]);
+    return newPost;
+  }
+
+  cancelTradePost(tradeId: string): TradePost[] {
+    const allTrades = this.getTradePosts();
+    const updatedTrades = allTrades.filter(t => t.id !== tradeId);
+    this.saveTradePosts(updatedTrades);
+    return updatedTrades;
+  }
+
+  // TradeOffer methods
+  createOffer(tradeId: string, offerer: User, songsOffered: CollectedSong[]): TradeOffer {
+    const newOffer: TradeOffer = {
+      id: `offer-${Date.now()}`,
+      tradeId,
+      offeredById: offerer.id,
+      offeredByName: offerer.name,
+      offeredByPfpUrl: offerer.pfpUrl,
+      songsOffered,
+      status: 'pending'
+    };
+    return newOffer;
+  }
   
-  const reviewOffer = useCallback((tradeId: string, offerId: string, decision: 'accepted' | 'declined') => {
-      const { updatedUsers, updatedTradePosts } = dataService.processOffer(tradeId, offerId, decision);
-      setUsers(updatedUsers);
-      setTradePosts(updatedTradePosts);
-      // Update current user state if they were involved in the trade
-      const updatedCurrentUser = updatedUsers.find(u => u.id === currentUser?.id);
-      if (updatedCurrentUser) {
-          setCurrentUser(updatedCurrentUser);
+  processOffer(tradeId: string, offerId: string, decision: 'accepted' | 'declined'): { updatedUsers: User[], updatedTradePosts: TradePost[] } {
+    let allTrades = this.getTradePosts();
+    let allUsers = this.getUsers();
+    
+    const tradeIndex = allTrades.findIndex(t => t.id === tradeId);
+    if (tradeIndex === -1) return { updatedUsers: allUsers, updatedTradePosts: allTrades };
+
+    const trade = allTrades[tradeIndex];
+    const offerIndex = trade.offers.findIndex(o => o.id === offerId);
+    if (offerIndex === -1) return { updatedUsers: allUsers, updatedTradePosts: allTrades };
+
+    if (decision === 'declined') {
+      trade.offers[offerIndex].status = 'declined';
+    } else if (decision === 'accepted') {
+      const offer = trade.offers[offerIndex];
+      const tradeOwner = allUsers.find(u => u.id === trade.ownerId);
+      const offerer = allUsers.find(u => u.id === offer.offeredById);
+
+      if (tradeOwner && offerer) {
+        // Remove traded songs from original owners
+        tradeOwner.collection = tradeOwner.collection.filter(s => s.id !== trade.songToTrade.id);
+        offerer.collection = offerer.collection.filter(s => !offer.songsOffered.some(os => os.id === s.id));
+        
+        // Add songs to new owners
+        const tradedSongToOfferer = { ...trade.songToTrade, ownerId: offerer.id };
+        const offeredSongsToOwner = offer.songsOffered.map(s => ({ ...s, ownerId: tradeOwner.id }));
+        
+        tradeOwner.collection.push(...offeredSongsToOwner);
+        offerer.collection.push(tradedSongToOfferer);
+
+        // Update users array
+        allUsers = allUsers.map(u => {
+            if (u.id === tradeOwner.id) return tradeOwner;
+            if (u.id === offerer.id) return offerer;
+            return u;
+        });
+
+        // Update trade and offers status
+        trade.status = 'closed';
+        trade.offers.forEach(o => {
+            o.status = o.id === offerId ? 'accepted' : 'declined';
+        });
       }
-  }, [currentUser]);
+    }
+    
+    allTrades[tradeIndex] = trade;
+    this.saveUsers(allUsers);
+    this.saveTradePosts(allTrades);
+    
+    return { updatedUsers: allUsers, updatedTradePosts: allTrades };
+  }
+}
 
-
-  return (
-    <UserContext.Provider value={{ 
-        currentUser, users, tradePosts, updateCurrentUser, 
-        addSongsToCollection, createTradePost, makeOffer, cancelTradePost,
-        reviewOffer, addFriend, removeFriend, setFavoriteArtists
-    }}>
-      {children}
-    </UserContext.Provider>
-  );
-};
+export const dataService = new DataService();
