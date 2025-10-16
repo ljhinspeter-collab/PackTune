@@ -1,160 +1,154 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { searchSongs } from '../services/musicService';
-import type { Song } from '../types';
+import React, { useState, useMemo, useContext } from 'react';
+import type { CollectedSong, User } from '../types';
 import { Rarity } from '../types';
 import { getRarityStyles } from '../utils/rarity';
+import { SearchBar } from '../components/SearchBar';
+import { SongPreviewModal } from '../components/SongPreviewModal';
 import { UserContext } from '../contexts/UserContext';
+import { RarityFilter } from '../components/RarityFilter';
 
-const PackRevealCard: React.FC<{ song: Song }> = ({ song }) => {
-    const rarityStyles = getRarityStyles(song.rarity);
-    const isMythic = song.rarity === Rarity.Mythic;
-    const isShiny = song.isShiny;
-    
+const ProfileEditModal: React.FC<{ user: User, onSave: (data: Partial<User>) => void, onClose: () => void }> = ({ user, onSave, onClose }) => {
+    const [name, setName] = useState(user.name);
+    const [bio, setBio] = useState(user.bio);
+    const [pfpUrl, setPfpUrl] = useState(user.pfpUrl);
+
+    const handleSave = () => {
+        onSave({ name, bio, pfpUrl });
+        onClose();
+    };
+
     return (
-        <div
-            className={`w-full max-w-sm h-[500px] p-4 rounded-xl shadow-2xl flex flex-col justify-between relative select-none overflow-hidden transition-opacity duration-300 ${isMythic ? 'mythic-border bg-gray-900' : `bg-gray-800 border ${rarityStyles.borderColor}`} ${isShiny ? 'mythic-glow' : ''}`}
-        >
-            <div className="absolute top-4 left-4 flex gap-2 z-10">
-                {isMythic && (
-                    <div className="bg-yellow-400 text-black text-sm font-bold px-3 py-1 rounded-full shadow-md">MYTHIC</div>
-                )}
-                {isShiny && (
-                    <div className="bg-gradient-to-r from-cyan-400 to-blue-500 text-white text-sm font-bold px-3 py-1 rounded-full shadow-md animate-pulse">SHINY</div>
-                )}
-            </div>
-            <div className="text-center pt-8">
-                <p className={`font-bold text-2xl truncate ${isMythic ? rarityStyles.textGradient : 'text-white'}`}>{song.title}</p>
-                <p className="text-gray-300 text-lg">{song.artist}</p>
-            </div>
-            <div className="relative w-64 h-64 mx-auto my-4">
-              <img src={song.albumArtUrl} crossOrigin="anonymous" alt={song.album} className={`w-full h-full rounded-lg object-cover shadow-lg `} />
-               {isShiny && <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-lg holographic"></div>}
-            </div>
-            <div className="flex justify-between items-center p-3 bg-black/20 rounded-lg">
-                <span className={`text-xl font-bold ${rarityStyles.textColor}`}>{song.rarity}</span>
-                {song.releaseDate && <span className="text-sm text-gray-400">{new Date(song.releaseDate).toLocaleDateString()}</span>}
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content w-full max-w-md bg-gray-800 rounded-lg p-6" onClick={e => e.stopPropagation()}>
+                <h3 className="text-2xl font-bold mb-4">Edit Profile</h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Bio</label>
+                        <textarea value={bio} onChange={e => setBio(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500" rows={2}></textarea>
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Profile Picture URL</label>
+                        <input type="text" value={pfpUrl} onChange={e => setPfpUrl(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-3 mt-6">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-md">Cancel</button>
+                    <button onClick={handleSave} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-md">Save</button>
+                </div>
             </div>
         </div>
     );
 };
 
-export const PacksView: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [packSongs, setPackSongs] = useState<Song[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [lastCollected, setLastCollected] = useState<string | null>(null);
-  const [isRevealing, setIsRevealing] = useState(false);
-  
-  const userContext = useContext(UserContext);
-  const { currentUser, addSongsToCollection } = userContext!;
 
-  useEffect(() => {
-    if (packSongs.length > 0) {
-      setIsRevealing(true);
-    }
-  }, [packSongs]);
-  
-  const openPack = async () => {
-    setIsLoading(true);
-    setError(null);
-    setPackSongs([]);
-    setCurrentIndex(0);
-    setIsRevealing(false);
-    try {
-      // Pass an empty query to get random songs and the favorites list for the boost
-      const songs = await searchSongs('', currentUser?.favoriteArtists || []);
-      if (songs.length < 5) {
-        setError('Could not find enough songs for a full pack. The universe is sparse today.');
-      } else {
-        setPackSongs(songs);
-      }
-    } catch (e: any) {
-      setError(e.message || 'An error occurred while opening the pack.');
-    }
-    setIsLoading(false);
-  };
-  
-  const handleNextSong = () => {
-      if (currentIndex >= packSongs.length) return;
-      
-      const songToCollect = packSongs[currentIndex];
-      addSongsToCollection([songToCollect]);
-      setLastCollected(songToCollect.title);
-      
-      setTimeout(() => setLastCollected(null), 2000);
-      
-      setIsRevealing(false);
-
-      setTimeout(() => {
-        if (currentIndex === packSongs.length - 1) {
-            // Last song, reset
-            setPackSongs([]);
-            setCurrentIndex(0);
-        } else {
-            setCurrentIndex(prev => prev + 1);
-            setIsRevealing(true);
-        }
-      }, 300); // Wait for fade out animation
-  };
-
-  const renderContent = () => {
-    if (isLoading) {
-      return (
-        <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-400"></div>
-            <p className="mt-4 text-gray-400 text-lg">Contacting the musical cosmos...</p>
-        </div>
-      );
-    }
-
-    if (error) {
-       return (
-        <div className="text-center">
-            <p className="text-red-400 mb-4">{error}</p>
-            <button onClick={openPack} className="px-4 py-2 bg-indigo-600 rounded-md">Try Again</button>
-        </div>
-       );
-    }
-
-    if (packSongs.length > 0) {
-      const currentSong = packSongs[currentIndex];
-      const isLastSong = currentIndex === packSongs.length - 1;
-      return (
-        <div className={`flex flex-col items-center justify-center transition-opacity duration-300 ${isRevealing ? 'opacity-100' : 'opacity-0'}`}>
-          <PackRevealCard key={currentSong.id} song={currentSong} />
-          <p className="mt-4 text-gray-400 font-bold">{currentIndex + 1} / {packSongs.length}</p>
-          <button onClick={handleNextSong} className="mt-4 px-8 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg text-lg transition-colors">
-            {isLastSong ? 'Finish & Collect' : 'Collect & Next'}
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="text-center flex flex-col items-center justify-center">
-        <h2 className="text-3xl font-bold mb-4">The Infinity Pack</h2>
-        <p className="text-gray-400 mb-8 max-w-md">Tap the pack to open it and discover 5 random songs. Add artists to your Favorites for a chance to find them here!</p>
-        <button
-          onClick={openPack}
-          disabled={isLoading}
-          className="w-64 h-64 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-2xl shadow-2xl flex items-center justify-center text-white font-bold text-2xl transition-transform hover:scale-105 active:scale-100 disabled:bg-gray-500 disabled:cursor-not-allowed"
-        >
-          OPEN
-        </button>
-      </div>
-    );
-  };
-
+const CollectedSongCard: React.FC<{ collectedSong: CollectedSong, onClick: () => void }> = ({ collectedSong, onClick }) => {
+  const { song } = collectedSong;
+  const rarityStyles = getRarityStyles(song.rarity);
+  const isMythic = song.rarity === Rarity.Mythic;
+  const isShiny = song.isShiny;
 
   return (
-    <div className="relative min-h-[calc(100vh-240px)] flex items-center justify-center">
-      {lastCollected && (
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-green-500/80 text-white px-4 py-2 rounded-lg z-10 animate-pulse">
-            Added "{lastCollected}" to your collection!
+    <button 
+      onClick={onClick} 
+      className={`p-2 rounded-lg border flex flex-col h-full transition-all duration-300 text-left w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isMythic ? 'mythic-border mythic-glow' : `bg-gray-800/50 ${rarityStyles.borderColor} hover:border-indigo-400`} ${isShiny && !isMythic ? 'shadow-lg shadow-cyan-500/40' : ''}`}>
+      <div className="relative">
+        <img src={collectedSong.song.albumArtUrl} alt={collectedSong.song.album} className="w-full h-auto aspect-square rounded-md object-cover mb-2"/>
+         {isShiny && <div className="absolute inset-0 rounded-md holographic"></div>}
+      </div>
+      <div className="flex-grow truncate">
+        <p className={`font-semibold text-white truncate ${isMythic ? rarityStyles.textGradient : ''}`}>{collectedSong.song.title}</p>
+        <p className="text-sm text-gray-400 truncate">{collectedSong.song.artist}</p>
+      </div>
+      <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/10">
+        <span className={`text-xs font-bold ${rarityStyles.textColor}`}>{collectedSong.song.rarity} {isShiny && '✨'}</span>
+        {isMythic && collectedSong.serialNumber && (
+           <span className="bg-yellow-400/80 text-black text-xs font-bold px-2 py-0.5 rounded-full">#{String(collectedSong.serialNumber).padStart(3, '0')}</span>
+        )}
+      </div>
+    </button>
+  );
+};
+
+export const CollectionView: React.FC<{ user: User }> = ({ user }) => {
+  const [query, setQuery] = useState('');
+  const [selectedSong, setSelectedSong] = useState<CollectedSong | null>(null);
+  const [rarityFilter, setRarityFilter] = useState<Rarity | 'All'>('All');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const userContext = useContext(UserContext);
+  const isCurrentUser = userContext?.currentUser?.id === user.id;
+
+  const filteredSongs = useMemo(() => {
+    let songs = user.collection;
+    if (rarityFilter !== 'All') {
+      songs = songs.filter(item => item.song.rarity === rarityFilter);
+    }
+    if (query.trim()) {
+      const lowerCaseQuery = query.toLowerCase();
+      songs = songs.filter(
+        (item) =>
+          item.song.title.toLowerCase().includes(lowerCaseQuery) ||
+          item.song.artist.toLowerCase().includes(lowerCaseQuery)
+      );
+    }
+    return songs;
+  }, [query, user.collection, rarityFilter]);
+
+  return (
+    <div>
+      <div className="flex flex-col md:flex-row items-center gap-6 mb-8 bg-gray-800/50 p-6 rounded-lg border border-gray-700">
+        <img src={user.pfpUrl} alt={user.name} className="w-24 h-24 rounded-full object-cover border-4 border-gray-600"/>
+        <div className="flex-grow text-center md:text-left">
+          <h2 className="text-3xl font-bold">{user.name}</h2>
+          <p className="text-gray-400 mt-1">{user.bio}</p>
+        </div>
+        {isCurrentUser && (
+            <button onClick={() => setIsEditingProfile(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md font-semibold transition-colors">
+                Edit Profile
+            </button>
+        )}
+      </div>
+
+      <div className="max-w-lg mx-auto mb-4">
+        <SearchBar query={query} setQuery={setQuery} onSearch={() => {}} isLoading={false} placeholder="Search your collection..."/>
+      </div>
+
+      <RarityFilter activeFilter={rarityFilter} setFilter={setRarityFilter} />
+      
+      {user.collection.length === 0 ? (
+        <div className="text-center text-gray-400 py-16">
+          <p className="text-lg">This collection is empty.</p>
+          {isCurrentUser && <p className="mt-1">Go to the 'Packs' tab to get some songs!</p>}
+        </div>
+      ) : filteredSongs.length === 0 ? (
+         <div className="text-center text-gray-400 py-16">
+          <p className="text-lg">No songs match your filters.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          {filteredSongs.map(song => (
+            <CollectedSongCard key={song.id} collectedSong={song} onClick={() => setSelectedSong(song)} />
+          ))}
         </div>
       )}
-      {renderContent()}
+      
+      {selectedSong && (
+        <SongPreviewModal
+            collectedSong={selectedSong}
+            onClose={() => setSelectedSong(null)}
+            showTradeButton={isCurrentUser}
+        />
+      )}
+      {isEditingProfile && isCurrentUser && userContext && (
+        <ProfileEditModal
+            user={user}
+            onClose={() => setIsEditingProfile(false)}
+            onSave={userContext.updateCurrentUser}
+        />
+      )}
     </div>
   );
 };
