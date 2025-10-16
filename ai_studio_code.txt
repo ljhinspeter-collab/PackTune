@@ -1,43 +1,106 @@
-import React, { useState, useMemo, useContext } from 'react';
-import type { CollectedSong, User } from '../types';
-import { Rarity } from '../types';
-import { getRarityStyles } from '../utils/rarity';
-import { SearchBar } from '../components/SearchBar';
-import { SongPreviewModal } from '../components/SongPreviewModal';
+import React, { useState, useContext, useMemo } from 'react';
 import { UserContext } from '../contexts/UserContext';
+import type { CollectedSong, TradePost, TradeOffer, User } from '../types';
+import { getRarityStyles } from '../utils/rarity';
+import { Rarity } from '../types';
+import { SearchBar } from '../components/SearchBar';
 import { RarityFilter } from '../components/RarityFilter';
 
-const ProfileEditModal: React.FC<{ user: User, onSave: (data: Partial<User>) => void, onClose: () => void }> = ({ user, onSave, onClose }) => {
-    const [name, setName] = useState(user.name);
-    const [bio, setBio] = useState(user.bio);
-    const [pfpUrl, setPfpUrl] = useState(user.pfpUrl);
+type TradeViewTab = 'Marketplace' | 'My Listings' | 'My Offers';
 
-    const handleSave = () => {
-        onSave({ name, bio, pfpUrl });
+const SongCard: React.FC<{ song: CollectedSong, small?: boolean }> = ({ song, small = false }) => {
+    const rarityStyles = getRarityStyles(song.song.rarity);
+    if (small) {
+        return (
+             <div className={`p-2 rounded-md ${rarityStyles.bgColor} border ${rarityStyles.borderColor} flex items-center gap-2`}>
+                <img src={song.song.albumArtUrl} alt={song.song.album} className="w-8 h-8 rounded-sm object-cover"/>
+                <div className="truncate">
+                    <p className="text-xs font-semibold truncate">{song.song.title}</p>
+                    <p className="text-xs text-gray-400 truncate">{song.song.artist}</p>
+                </div>
+            </div>
+        )
+    }
+    return (
+        <div className={`p-3 rounded-lg ${rarityStyles.bgColor} border ${rarityStyles.borderColor}`}>
+            <div className="flex items-center gap-3">
+                 <img src={song.song.albumArtUrl} alt={song.song.album} className="w-12 h-12 rounded-md object-cover"/>
+                 <div className="flex-grow truncate">
+                    <p className="font-semibold text-white truncate">{song.song.title}</p>
+                    <p className="text-sm text-gray-400 truncate">{song.song.artist}</p>
+                 </div>
+            </div>
+            <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/10 text-xs">
+                <span className={`font-bold ${rarityStyles.textColor}`}>{song.song.rarity} {song.song.isShiny && '✨'}</span>
+                {song.song.rarity === Rarity.Mythic && song.serialNumber && (
+                    <span className="bg-yellow-400/80 text-black font-bold px-2 py-0.5 rounded-full">#{String(song.serialNumber).padStart(3, '0')}</span>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const MakeOfferModal: React.FC<{ tradePost: TradePost, onClose: () => void }> = ({ tradePost, onClose }) => {
+    const { currentUser, makeOffer } = useContext(UserContext)!;
+    const [selectedSongs, setSelectedSongs] = useState<CollectedSong[]>([]);
+    
+    const toggleSongSelection = (song: CollectedSong) => {
+        setSelectedSongs(prev => 
+            prev.find(s => s.id === song.id) 
+                ? prev.filter(s => s.id !== song.id) 
+                : [...prev, song]
+        );
+    };
+
+    const handleSubmitOffer = () => {
+        if (selectedSongs.length === 0) return;
+        makeOffer(tradePost, selectedSongs);
         onClose();
     };
 
+    // Filter out the song that is being traded
+    const availableCollection = currentUser!.collection.filter(s => s.id !== tradePost.songToTrade.id);
+
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content w-full max-w-md bg-gray-800 rounded-lg p-6" onClick={e => e.stopPropagation()}>
-                <h3 className="text-2xl font-bold mb-4">Edit Profile</h3>
-                <div className="space-y-4">
+            <div className="modal-content w-full max-w-2xl bg-gray-800 rounded-lg p-6 flex flex-col" onClick={e => e.stopPropagation()}>
+                <h3 className="text-2xl font-bold mb-4">Make an Offer</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
-                        <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                        <p className="font-semibold mb-2">They are offering:</p>
+                        <SongCard song={tradePost.songToTrade} />
+                         <p className="text-sm text-gray-400 mt-2">Seeking: <span className="text-gray-200">{tradePost.seeking}</span></p>
                     </div>
                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Bio</label>
-                        <textarea value={bio} onChange={e => setBio(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500" rows={2}></textarea>
-                    </div>
-                     <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Profile Picture URL</label>
-                        <input type="text" value={pfpUrl} onChange={e => setPfpUrl(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                        <p className="font-semibold mb-2">You are offering:</p>
+                         {selectedSongs.length > 0 ? (
+                            <div className="space-y-2">
+                                {selectedSongs.map(s => <SongCard key={s.id} song={s} small />)}
+                            </div>
+                        ) : (
+                            <div className="text-center text-gray-400 p-4 border-2 border-dashed border-gray-600 rounded-lg">Select songs from your collection below.</div>
+                        )}
                     </div>
                 </div>
+
+                <p className="font-semibold mb-2">Your Collection:</p>
+                <div className="flex-grow bg-gray-900/50 p-2 rounded-lg overflow-y-auto max-h-[300px]">
+                     {availableCollection.length > 0 ? (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                            {availableCollection.map(song => (
+                                 <button key={song.id} onClick={() => toggleSongSelection(song)} className={`w-full text-left rounded-lg transition-all ${selectedSongs.find(s => s.id === song.id) ? 'ring-2 ring-indigo-500' : ''}`}>
+                                    <SongCard song={song} />
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-center text-gray-400 p-4">You have no other songs to offer.</p>
+                    )}
+                </div>
+                
                 <div className="flex justify-end gap-3 mt-6">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-md">Cancel</button>
-                    <button onClick={handleSave} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-md">Save</button>
+                    <button onClick={handleSubmitOffer} disabled={selectedSongs.length === 0} className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-md disabled:bg-gray-500 disabled:cursor-not-allowed">Submit Offer</button>
                 </div>
             </div>
         </div>
@@ -45,110 +108,249 @@ const ProfileEditModal: React.FC<{ user: User, onSave: (data: Partial<User>) => 
 };
 
 
-const CollectedSongCard: React.FC<{ collectedSong: CollectedSong, onClick: () => void }> = ({ collectedSong, onClick }) => {
-  const { song } = collectedSong;
-  const rarityStyles = getRarityStyles(song.rarity);
-  const isMythic = song.rarity === Rarity.Mythic;
-  const isShiny = song.isShiny;
+const TradePostCard: React.FC<{ post: TradePost, onMakeOffer: () => void, currentUserId: string | undefined }> = ({ post, onMakeOffer, currentUserId }) => {
+    const hasMadeOffer = post.offers.some(o => o.offeredById === currentUserId);
 
-  return (
-    <button 
-      onClick={onClick} 
-      className={`p-2 rounded-lg border flex flex-col h-full transition-all duration-300 text-left w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isMythic ? 'mythic-border mythic-glow' : `bg-gray-800/50 ${rarityStyles.borderColor} hover:border-indigo-400`} ${isShiny && !isMythic ? 'shadow-lg shadow-cyan-500/40' : ''}`}>
-      <div className="relative">
-        <img src={collectedSong.song.albumArtUrl} alt={collectedSong.song.album} className="w-full h-auto aspect-square rounded-md object-cover mb-2"/>
-         {isShiny && <div className="absolute inset-0 rounded-md holographic"></div>}
-      </div>
-      <div className="flex-grow truncate">
-        <p className={`font-semibold text-white truncate ${isMythic ? rarityStyles.textGradient : ''}`}>{collectedSong.song.title}</p>
-        <p className="text-sm text-gray-400 truncate">{collectedSong.song.artist}</p>
-      </div>
-      <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/10">
-        <span className={`text-xs font-bold ${rarityStyles.textColor}`}>{collectedSong.song.rarity} {isShiny && '✨'}</span>
-        {isMythic && collectedSong.serialNumber && (
-           <span className="bg-yellow-400/80 text-black text-xs font-bold px-2 py-0.5 rounded-full">#{String(collectedSong.serialNumber).padStart(3, '0')}</span>
-        )}
-      </div>
-    </button>
-  );
+    return (
+        <div className="p-4 bg-gray-800 rounded-lg border border-gray-700 flex flex-col sm:flex-row items-center gap-4">
+            <div className="flex items-center gap-3 flex-shrink-0">
+                <img src={post.ownerPfpUrl} alt={post.ownerName} className="w-10 h-10 rounded-full object-cover"/>
+                <p className="font-semibold">{post.ownerName}</p>
+            </div>
+            <div className="flex-grow w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                    <div>
+                        <p className="text-xs text-gray-400 mb-1">OFFERING:</p>
+                        <SongCard song={post.songToTrade} small />
+                    </div>
+                     <div>
+                        <p className="text-xs text-gray-400 mb-1">SEEKING:</p>
+                        <p className="text-sm p-2 bg-gray-700/50 rounded-md truncate">{post.seeking}</p>
+                    </div>
+                </div>
+            </div>
+            <div className="flex-shrink-0 flex flex-col items-center gap-2">
+                <button 
+                    onClick={onMakeOffer} 
+                    className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-md transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    disabled={hasMadeOffer}
+                >
+                    {hasMadeOffer ? 'Offer Sent' : 'Make Offer'}
+                </button>
+                 <span className="text-xs text-gray-500">{post.offers.length} {post.offers.length === 1 ? 'Offer' : 'Offers'}</span>
+            </div>
+        </div>
+    );
 };
 
-export const CollectionView: React.FC<{ user: User }> = ({ user }) => {
-  const [query, setQuery] = useState('');
-  const [selectedSong, setSelectedSong] = useState<CollectedSong | null>(null);
-  const [rarityFilter, setRarityFilter] = useState<Rarity | 'All'>('All');
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const userContext = useContext(UserContext);
-  const isCurrentUser = userContext?.currentUser?.id === user.id;
-
-  const filteredSongs = useMemo(() => {
-    let songs = user.collection;
-    if (rarityFilter !== 'All') {
-      songs = songs.filter(item => item.song.rarity === rarityFilter);
-    }
-    if (query.trim()) {
-      const lowerCaseQuery = query.toLowerCase();
-      songs = songs.filter(
-        (item) =>
-          item.song.title.toLowerCase().includes(lowerCaseQuery) ||
-          item.song.artist.toLowerCase().includes(lowerCaseQuery)
-      );
-    }
-    return songs;
-  }, [query, user.collection, rarityFilter]);
-
-  return (
-    <div>
-      <div className="flex flex-col md:flex-row items-center gap-6 mb-8 bg-gray-800/50 p-6 rounded-lg border border-gray-700">
-        <img src={user.pfpUrl} alt={user.name} className="w-24 h-24 rounded-full object-cover border-4 border-gray-600"/>
-        <div className="flex-grow text-center md:text-left">
-          <h2 className="text-3xl font-bold">{user.name}</h2>
-          <p className="text-gray-400 mt-1">{user.bio}</p>
+const OfferCard: React.FC<{ offer: TradeOffer, onAccept: () => void, onDecline: () => void }> = ({ offer, onAccept, onDecline }) => {
+    return (
+        <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+            <div className="flex items-center gap-3 mb-3">
+                 <img src={offer.offeredByPfpUrl} alt={offer.offeredByName} className="w-10 h-10 rounded-full object-cover"/>
+                 <p className="font-semibold">{offer.offeredByName} is offering:</p>
+            </div>
+            <div className="space-y-2 mb-4">
+                {offer.songsOffered.map(song => <SongCard key={song.id} song={song} small />)}
+            </div>
+            {offer.status === 'pending' && (
+                <div className="flex justify-end gap-2">
+                    <button onClick={onDecline} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-sm rounded-md">Decline</button>
+                    <button onClick={onAccept} className="px-3 py-1 bg-green-600 hover:bg-green-500 text-sm rounded-md">Accept</button>
+                </div>
+            )}
+             {offer.status !== 'pending' && (
+                 <div className="text-right">
+                    <span className={`px-3 py-1 text-sm rounded-md font-semibold ${offer.status === 'accepted' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {offer.status.charAt(0).toUpperCase() + offer.status.slice(1)}
+                    </span>
+                 </div>
+            )}
         </div>
-        {isCurrentUser && (
-            <button onClick={() => setIsEditingProfile(true)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md font-semibold transition-colors">
-                Edit Profile
-            </button>
-        )}
-      </div>
+    )
+};
 
-      <div className="max-w-lg mx-auto mb-4">
-        <SearchBar query={query} setQuery={setQuery} onSearch={() => {}} isLoading={false} placeholder="Search your collection..."/>
-      </div>
 
-      <RarityFilter activeFilter={rarityFilter} setFilter={setRarityFilter} />
-      
-      {user.collection.length === 0 ? (
-        <div className="text-center text-gray-400 py-16">
-          <p className="text-lg">This collection is empty.</p>
-          {isCurrentUser && <p className="mt-1">Go to the 'Packs' tab to get some songs!</p>}
+const MyListingCard: React.FC<{ 
+    post: TradePost; 
+    onCancel: () => void;
+    onAcceptOffer: (offerId: string) => void;
+    onDeclineOffer: (offerId: string) => void;
+}> = ({ post, onCancel, onAcceptOffer, onDeclineOffer }) => (
+    <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+        <div className="flex justify-between items-start">
+            <div>
+                 <p className="text-xs text-gray-400 mb-1">YOU ARE OFFERING:</p>
+                 <SongCard song={post.songToTrade} />
+            </div>
+            {post.status === 'open' && (
+                <button onClick={onCancel} className="px-3 py-1.5 bg-red-600/80 hover:bg-red-600 text-white text-sm font-semibold rounded-md transition-colors">
+                    Cancel Trade
+                </button>
+            )}
+            {post.status === 'closed' && (
+                 <span className="px-3 py-1.5 bg-gray-600 text-white text-sm font-semibold rounded-md">
+                    Trade Closed
+                </span>
+            )}
         </div>
-      ) : filteredSongs.length === 0 ? (
-         <div className="text-center text-gray-400 py-16">
-          <p className="text-lg">No songs match your filters.</p>
+        <p className="text-sm text-gray-400 mt-2">Seeking: <span className="text-gray-200">{post.seeking}</span></p>
+
+        <div className="mt-4 pt-4 border-t border-gray-700">
+            <h4 className="font-semibold mb-2">Offers Received ({post.offers.length})</h4>
+            {post.offers.length > 0 ? (
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                    {post.offers.map(offer => (
+                        <OfferCard 
+                            key={offer.id} 
+                            offer={offer} 
+                            onAccept={() => onAcceptOffer(offer.id)}
+                            onDecline={() => onDeclineOffer(offer.id)}
+                        />
+                    ))}
+                </div>
+            ) : <p className="text-sm text-gray-500">No offers yet.</p>}
         </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-          {filteredSongs.map(song => (
-            <CollectedSongCard key={song.id} collectedSong={song} onClick={() => setSelectedSong(song)} />
-          ))}
-        </div>
-      )}
-      
-      {selectedSong && (
-        <SongPreviewModal
-            collectedSong={selectedSong}
-            onClose={() => setSelectedSong(null)}
-            showTradeButton={isCurrentUser}
-        />
-      )}
-      {isEditingProfile && isCurrentUser && userContext && (
-        <ProfileEditModal
-            user={user}
-            onClose={() => setIsEditingProfile(false)}
-            onSave={userContext.updateCurrentUser}
-        />
-      )}
     </div>
-  );
+);
+
+const MyOfferItem: React.FC<{ offer: TradeOffer, trade: TradePost | undefined }> = ({ offer, trade }) => {
+    if (!trade) return null;
+    const getStatusStyles = () => {
+        switch (offer.status) {
+            case 'accepted': return 'bg-green-500/20 text-green-400';
+            case 'declined': return 'bg-red-500/20 text-red-400';
+            default: return 'bg-yellow-500/20 text-yellow-400';
+        }
+    };
+    return (
+         <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+             <div className="flex justify-between items-start mb-3">
+                 <p className="font-semibold">Your offer to <span className="text-indigo-400">{trade.ownerName}</span></p>
+                 <span className={`px-2 py-1 text-xs rounded-md font-semibold ${getStatusStyles()}`}>{offer.status}</span>
+             </div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                 <div>
+                    <p className="text-xs text-gray-400 mb-1">YOU OFFERED:</p>
+                    <div className="space-y-1">
+                     {offer.songsOffered.map(s => <SongCard key={s.id} song={s} small />)}
+                    </div>
+                 </div>
+                 <div>
+                    <p className="text-xs text-gray-400 mb-1">FOR THEIR:</p>
+                    <SongCard song={trade.songToTrade} small />
+                 </div>
+             </div>
+         </div>
+    )
+}
+
+export const TradeHubView: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<TradeViewTab>('Marketplace');
+    const [selectedTrade, setSelectedTrade] = useState<TradePost | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [rarityFilter, setRarityFilter] = useState<Rarity | 'All'>('All');
+    const { currentUser, tradePosts, reviewOffer, cancelTradePost } = useContext(UserContext)!;
+
+    const marketplacePosts = useMemo(() => {
+        let posts = tradePosts.filter(p => p.ownerId !== currentUser!.id && p.status === 'open').sort((a,b) => b.createdAt - a.createdAt);
+        
+        if (rarityFilter !== 'All') {
+            posts = posts.filter(p => p.songToTrade.song.rarity === rarityFilter);
+        }
+
+        if (searchQuery.trim()) {
+            const lowerCaseQuery = searchQuery.toLowerCase();
+            posts = posts.filter(p => 
+                p.songToTrade.song.title.toLowerCase().includes(lowerCaseQuery) ||
+                p.songToTrade.song.artist.toLowerCase().includes(lowerCaseQuery)
+            );
+        }
+
+        return posts;
+    }, [tradePosts, currentUser, rarityFilter, searchQuery]);
+
+    const myPosts = useMemo(() => tradePosts.filter(p => p.ownerId === currentUser!.id).sort((a,b) => b.createdAt - a.createdAt), [tradePosts, currentUser]);
+    
+    // Create a map for quick lookup
+    const tradePostsById = useMemo(() => new Map(tradePosts.map(p => [p.id, p])), [tradePosts]);
+    
+    const myOffers = useMemo(() => {
+        return tradePosts
+            .flatMap(p => p.offers.map(o => ({ ...o, tradeId: p.id }))) // ensure tradeId is on offer
+            .filter(o => o.offeredById === currentUser!.id);
+    }, [tradePosts, currentUser]);
+
+
+    const renderContent = () => {
+        switch(activeTab) {
+            case 'Marketplace':
+                return (
+                    <div>
+                        <div className="max-w-lg mx-auto mb-4">
+                            <SearchBar 
+                                query={searchQuery}
+                                setQuery={setSearchQuery}
+                                onSearch={() => {}}
+                                isLoading={false}
+                                placeholder="Search by song or artist..."
+                            />
+                        </div>
+                        <RarityFilter activeFilter={rarityFilter} setFilter={setRarityFilter} />
+
+                        {marketplacePosts.length > 0 ? (
+                            <div className="space-y-3">
+                                {marketplacePosts.map(post => <TradePostCard key={post.id} post={post} onMakeOffer={() => setSelectedTrade(post)} currentUserId={currentUser?.id} />)}
+                            </div>
+                        ) : <p className="text-center text-gray-400 py-10">No trades match your filters. Try a different search!</p>}
+                    </div>
+                );
+
+            case 'My Listings':
+                 return myPosts.length > 0 ? (
+                    <div className="space-y-3">
+                        {myPosts.map(post => (
+                            <MyListingCard 
+                                key={post.id} 
+                                post={post} 
+                                onCancel={() => cancelTradePost(post.id)}
+                                onAcceptOffer={(offerId) => reviewOffer(post.id, offerId, 'accepted')}
+                                onDeclineOffer={(offerId) => reviewOffer(post.id, offerId, 'declined')}
+                            />
+                        ))}
+                    </div>
+                ) : <p className="text-center text-gray-400 py-10">Create trade listings from the song details screen in your collection.</p>;
+
+            case 'My Offers':
+                return myOffers.length > 0 ? (
+                    <div className="space-y-3">
+                        {myOffers.map(offer => (
+                            <MyOfferItem key={offer.id} offer={offer} trade={tradePostsById.get(offer.tradeId)} />
+                        ))}
+                    </div>
+                ) : <p className="text-center text-gray-400 py-10">You haven't made any offers yet.</p>;
+        }
+    };
+    
+    return (
+        <div>
+            <h2 className="text-3xl font-bold mb-6 text-center">Trade Hub</h2>
+
+            <div className="flex justify-center border-b border-gray-700 mb-6">
+                 {(['Marketplace', 'My Listings', 'My Offers'] as TradeViewTab[]).map(tab => (
+                    <button 
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`px-6 py-3 font-semibold text-sm transition-colors ${activeTab === tab ? 'border-b-2 border-indigo-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                    >
+                        {tab}
+                    </button>
+                ))}
+            </div>
+
+            {renderContent()}
+
+            {selectedTrade && <MakeOfferModal tradePost={selectedTrade} onClose={() => setSelectedTrade(null)} />}
+        </div>
+    );
 };
