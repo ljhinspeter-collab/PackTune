@@ -1,129 +1,181 @@
-import type { User, Artist, Song, CollectedSong, TradePost, TradeOffer } from '../types';
+import { Song, Rarity, Artist } from '../types';
 
-const USERS_KEY = 'soundmap_users';
-const TRADES_KEY = 'soundmap_trades';
-const CURRENT_USER_ID_KEY = 'soundmap_current_user_id';
+const assignAttributes = (): { rarity: Rarity, isShiny: boolean } => {
+  const rarityRand = Math.random();
+  let rarity: Rarity;
 
-class DataService {
-
-  constructor() {
-    this.seedInitialData();
+  if (rarityRand < 0.001) {       // 0.1% for Mythic
+    rarity = Rarity.Mythic;
+  } else if (rarityRand < 0.041) { // 4% for Rare
+    rarity = Rarity.Rare;
+  } else if (rarityRand < 0.241) { // 20% for Uncommon
+    rarity = Rarity.Uncommon;
+  } else {                         // 75.9% for Common
+    rarity = Rarity.Common;
   }
 
-  private seedInitialData() {
-    if (!localStorage.getItem(USERS_KEY)) {
-      const initialUsers: User[] = [
-        { id: 'user-1', name: "You", bio: "Just here for the music!", pfpUrl: `https://i.pravatar.cc/150?u=user-1`, collection: [], favoriteArtists: [], friendIds: [] },
-        // NOTE: In a real-world scenario, other users would be fetched from a server.
-        // For this simulation, we only create the primary user.
-      ];
-      
-      this.saveUsers(initialUsers);
-      this.setCurrentUserId(initialUsers[0].id);
-      localStorage.setItem(TRADES_KEY, JSON.stringify([]));
-    }
-  }
+  const isShiny = Math.random() < 0.01; // 1% chance for shiny
 
-  // User methods
-  getUsers = (): User[] => JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-  saveUsers = (users: User[]) => localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  getCurrentUserId = (): string => localStorage.getItem(CURRENT_USER_ID_KEY) || this.getUsers()[0]?.id;
-  setCurrentUserId = (id: string) => localStorage.setItem(CURRENT_USER_ID_KEY, id);
+  return { rarity, isShiny };
+};
 
-  // TradePost methods
-  getTradePosts = (): TradePost[] => JSON.parse(localStorage.getItem(TRADES_KEY) || '[]');
-  saveTradePosts = (trades: TradePost[]) => localStorage.setItem(TRADES_KEY, JSON.stringify(trades));
-
-  createTradePost(owner: User, songToTrade: CollectedSong, seeking: string): TradePost {
-    const newPost: TradePost = {
-      id: `trade-${Date.now()}`,
-      ownerId: owner.id,
-      ownerName: owner.name,
-      ownerPfpUrl: owner.pfpUrl,
-      songToTrade,
-      seeking,
-      offers: [],
-      status: 'open',
-      createdAt: Date.now()
-    };
-
-    const allTrades = this.getTradePosts();
-    this.saveTradePosts([newPost, ...allTrades]);
-    return newPost;
-  }
-
-  cancelTradePost(tradeId: string): TradePost[] {
-    const allTrades = this.getTradePosts();
-    const updatedTrades = allTrades.filter(t => t.id !== tradeId);
-    this.saveTradePosts(updatedTrades);
-    return updatedTrades;
-  }
-
-  // TradeOffer methods
-  createOffer(tradeId: string, offerer: User, songsOffered: CollectedSong[]): TradeOffer {
-    const newOffer: TradeOffer = {
-      id: `offer-${Date.now()}`,
-      tradeId,
-      offeredById: offerer.id,
-      offeredByName: offerer.name,
-      offeredByPfpUrl: offerer.pfpUrl,
-      songsOffered,
-      status: 'pending'
-    };
-    return newOffer;
-  }
-  
-  processOffer(tradeId: string, offerId: string, decision: 'accepted' | 'declined'): { updatedUsers: User[], updatedTradePosts: TradePost[] } {
-    let allTrades = this.getTradePosts();
-    let allUsers = this.getUsers();
-    
-    const tradeIndex = allTrades.findIndex(t => t.id === tradeId);
-    if (tradeIndex === -1) return { updatedUsers: allUsers, updatedTradePosts: allTrades };
-
-    const trade = allTrades[tradeIndex];
-    const offerIndex = trade.offers.findIndex(o => o.id === offerId);
-    if (offerIndex === -1) return { updatedUsers: allUsers, updatedTradePosts: allTrades };
-
-    if (decision === 'declined') {
-      trade.offers[offerIndex].status = 'declined';
-    } else if (decision === 'accepted') {
-      const offer = trade.offers[offerIndex];
-      const tradeOwner = allUsers.find(u => u.id === trade.ownerId);
-      const offerer = allUsers.find(u => u.id === offer.offeredById);
-
-      if (tradeOwner && offerer) {
-        // Remove traded songs from original owners
-        tradeOwner.collection = tradeOwner.collection.filter(s => s.id !== trade.songToTrade.id);
-        offerer.collection = offerer.collection.filter(s => !offer.songsOffered.some(os => os.id === s.id));
+// Deezer API requires JSONP for client-side requests.
+const jsonp = (baseUrl: string, callbackName: string = `jsonp_${Date.now()}_${Math.ceil(Math.random() * 100000)}`): Promise<any> => {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
         
-        // Add songs to new owners
-        const tradedSongToOfferer = { ...trade.songToTrade, ownerId: offerer.id };
-        const offeredSongsToOwner = offer.songsOffered.map(s => ({ ...s, ownerId: tradeOwner.id }));
+        (window as any)[callbackName] = (data: any) => {
+            delete (window as any)[callbackName];
+            document.body.removeChild(script);
+            resolve(data);
+        };
+
+        const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}output=jsonp&callback=${callbackName}`;
+        script.src = url;
+        script.onerror = (err) => {
+            delete (window as any)[callbackName];
+            document.body.removeChild(script);
+            reject(err);
+        };
         
-        tradeOwner.collection.push(...offeredSongsToOwner);
-        offerer.collection.push(tradedSongToOfferer);
+        document.body.appendChild(script);
+    });
+};
 
-        // Update users array
-        allUsers = allUsers.map(u => {
-            if (u.id === tradeOwner.id) return tradeOwner;
-            if (u.id === offerer.id) return offerer;
-            return u;
-        });
-
-        // Update trade and offers status
-        trade.status = 'closed';
-        trade.offers.forEach(o => {
-            o.status = o.id === offerId ? 'accepted' : 'declined';
-        });
-      }
-    }
-    
-    allTrades[tradeIndex] = trade;
-    this.saveUsers(allUsers);
-    this.saveTradePosts(allTrades);
-    
-    return { updatedUsers: allUsers, updatedTradePosts: allTrades };
-  }
+interface DeezerTrack {
+    id: number;
+    title: string;
+    artist: { name: string };
+    album: { title: string, cover_xl: string };
+    preview: string;
+    type: string;
 }
 
-export const dataService = new DataService();
+interface DeezerArtist {
+    id: number;
+    name: string;
+    picture_medium: string;
+}
+
+// Helper to shuffle an array for better pack randomness
+const shuffleArray = <T>(array: T[]): T[] => {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+};
+
+export const searchArtists = async (query: string): Promise<Artist[]> => {
+    if (!query.trim()) return [];
+    const url = `https://api.deezer.com/search/artist?q=${encodeURIComponent(query)}&limit=10`;
+    try {
+        const data: { data: DeezerArtist[] } = await jsonp(url);
+        return data.data
+            .filter(item => item.id && item.name)
+            .map(item => ({
+                id: item.id.toString(),
+                name: item.name,
+                pictureUrl: item.picture_medium,
+            }));
+    } catch (error) {
+        console.error("Error searching for artists:", error);
+        throw new Error("Failed to search for artists. Please check your connection.");
+    }
+};
+
+export const searchSongs = async (query: string, favoriteArtists: Artist[] = []): Promise<Song[]> => {
+  const isPackOpening = !query;
+  
+  try {
+    let songsToProcess: DeezerTrack[] = [];
+
+    if (isPackOpening) {
+      const genres = [
+        'Pop', 'Rock', 'Hip-Hop', 'R&B', 'Electronic', 'Country', 'Jazz', 
+        'Classical', 'Reggae', 'Blues', 'Folk', 'Metal', 'Indie', 'Alternative', 
+        'K-Pop', 'Latin', 'Afrobeat', 'Dance', 'Funk', 'Gospel', 'Soundtrack'
+      ];
+      
+      const shuffledGenres = shuffleArray([...genres]);
+      const searchTerms = shuffledGenres.slice(0, Math.floor(Math.random() * 2) + 2); // 2 or 3 genres
+
+      // 5% chance to boost with a favorite artist, replacing one of the genres
+      if (favoriteArtists.length > 0 && Math.random() < 0.05) {
+          const randomFavArtist = favoriteArtists[Math.floor(Math.random() * favoriteArtists.length)];
+          searchTerms[searchTerms.length - 1] = randomFavArtist.name;
+      }
+      
+      const promises = searchTerms.map(term => {
+        const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(term)}&limit=100`;
+        return jsonp(url);
+      });
+      
+      const results = await Promise.all(promises);
+      const combinedRawSongs: DeezerTrack[] = results.flatMap(result => result.data || []);
+      songsToProcess = combinedRawSongs;
+
+    } else {
+        const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=25`;
+        const data: { data: DeezerTrack[] } = await jsonp(url);
+        songsToProcess = data.data;
+    }
+
+    let validSongs = songsToProcess.filter(item => 
+        item.type === 'track' && 
+        item.id &&
+        item.title &&
+        item.artist && item.artist.name &&
+        item.album && item.album.cover_xl &&
+        item.preview
+    );
+
+    if (validSongs.length === 0) {
+      return [];
+    }
+    
+    if (isPackOpening) {
+        const uniqueSongsMap = new Map<string, DeezerTrack>();
+        for (const song of validSongs) {
+            const key = `${song.title.toLowerCase().trim()}|${song.artist.name.toLowerCase().trim()}`;
+            if (!uniqueSongsMap.has(key)) {
+                uniqueSongsMap.set(key, song);
+            }
+        }
+        
+        let uniqueSongs = Array.from(uniqueSongsMap.values());
+
+        if (uniqueSongs.length < 5) {
+            if (uniqueSongs.length === 0) {
+                 throw new Error("Couldn't find any unique songs for a pack. The cosmos is unusually quiet today.");
+            }
+        }
+        
+        validSongs = shuffleArray(uniqueSongs).slice(0, 5);
+    }
+
+    const mappedSongs: Song[] = validSongs.map((item) => {
+      const { rarity, isShiny } = assignAttributes();
+      return {
+          id: item.id.toString(),
+          title: item.title,
+          artist: item.artist.name,
+          album: item.album.title,
+          albumArtUrl: item.album.cover_xl,
+          previewUrl: item.preview,
+          // releaseDate is not available in Deezer's search API, so it's omitted.
+          rarity,
+          isShiny,
+      };
+    });
+
+    return mappedSongs;
+
+  } catch (error) {
+    console.error("Error in music service:", error);
+    if (error instanceof TypeError) {
+        throw new Error("Failed to connect to the music service. Please check your internet connection.");
+    }
+    throw new Error(error instanceof Error ? error.message : "An unexpected error occurred while fetching music.");
+  }
+};
