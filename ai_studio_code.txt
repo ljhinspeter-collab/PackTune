@@ -1,63 +1,39 @@
-export enum Rarity {
-  Common = 'Common',
-  Uncommon = 'Uncommon',
-  Rare = 'Rare',
-  Mythic = 'Mythic',
-}
+import { Rarity } from '../types';
 
-export interface Song {
-  id: string;
-  title: string;
-  artist: string;
-  album: string;
-  albumArtUrl:string;
-  previewUrl: string;
-  releaseDate?: string;
-  rarity: Rarity;
-  isShiny: boolean;
-}
-
-export interface Artist {
-  id: string;
-  name: string;
-  pictureUrl?: string;
-}
-
-export interface CollectedSong {
-  id: string; // Unique instance ID
-  song: Song;
-  serialNumber?: number; // Only for Mythic songs
-  ownerId: string;
-}
-
-export interface User {
-  id: string;
-  name: string;
-  bio: string;
-  pfpUrl: string;
-  collection: CollectedSong[];
-  favoriteArtists: Artist[];
-  friendIds: string[];
-}
-
-export interface TradePost {
-  id: string;
-  ownerId: string;
-  ownerName: string;
-  ownerPfpUrl: string;
-  songToTrade: CollectedSong;
-  seeking: string; // A text description of what the user wants
-  offers: TradeOffer[];
-  status: 'open' | 'closed';
-  createdAt: number;
-}
-
-export interface TradeOffer {
-  id: string;
-  tradeId: string;
-  offeredById: string;
-  offeredByName: string;
-  offeredByPfpUrl: string;
-  songsOffered: CollectedSong[];
-  status: 'pending' | 'accepted' | 'declined';
-}
+export const getRarityStyles = (rarity: Rarity) => {
+  switch (rarity) {
+    case Rarity.Mythic:
+      return {
+        textColor: 'text-purple-400',
+        borderColor: 'border-purple-500',
+        bgColor: 'bg-purple-900/50',
+        shadow: 'shadow-purple-500/50',
+        textGradient: 'bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 via-purple-500 to-pink-500'
+      };
+    case Rarity.Rare:
+      return {
+        textColor: 'text-blue-400',
+        borderColor: 'border-blue-400',
+        bgColor: 'bg-blue-900/50',
+        shadow: 'shadow-blue-500/50',
+        textGradient: ''
+      };
+    case Rarity.Uncommon:
+      return {
+        textColor: 'text-green-400',
+        borderColor: 'border-green-400',
+        bgColor: 'bg-green-900/50',
+        shadow: 'shadow-green-500/50',
+        textGradient: ''
+      };
+    case Rarity.Common:
+    default:
+      return {
+        textColor: 'text-gray-400',
+        borderColor: 'border-gray-600',
+        bgColor: 'bg-gray-800/50',
+        shadow: 'shadow-gray-500/50',
+        textGradient: ''
+      };
+  }
+};
