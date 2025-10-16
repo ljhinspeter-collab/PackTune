@@ -1,5 +1,63 @@
-{
-  "name": "PackTunes - Collect Your Songs",
-  "description": "An application to collect your favorite songs from packs, trade with friends, and build your ultimate music collection.",
-  "requestFramePermissions": []
-}
+import React, { useState, useContext } from 'react';
+import { PackageIcon } from './components/icons';
+import { BottomNavBar, Tab } from './components/BottomNavBar';
+import { PacksView } from './views/PacksView';
+import { CollectionView } from './views/CollectionView';
+import { TradeHubView } from './views/TradeHubView';
+import { FriendsView } from './views/FriendsView';
+import { FavoritesView } from './views/FavoritesView';
+import { UserContext } from './contexts/UserContext';
+
+const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<Tab>('packs');
+  const userContext = useContext(UserContext);
+
+  if (!userContext || !userContext.currentUser) {
+    return (
+        <div className="flex items-center justify-center min-h-screen">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-400"></div>
+        </div>
+    );
+  }
+
+  const { currentUser } = userContext;
+  
+  const renderActiveView = () => {
+    switch (activeTab) {
+      case 'packs':
+        return <PacksView />;
+      case 'collection':
+        return <CollectionView user={currentUser} />;
+      case 'favorites':
+        return <FavoritesView />;
+      case 'trade':
+        return <TradeHubView />;
+      case 'friends':
+        return <FriendsView />;
+      default:
+        return <PacksView />;
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white font-sans p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto">
+        <header className="mb-6 text-center">
+          <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl flex items-center justify-center gap-3">
+            <PackageIcon className="w-10 h-10 text-indigo-400" />
+            PackTunes
+          </h1>
+          <p className="mt-3 text-lg text-gray-400">Collect your songs, build your legacy.</p>
+        </header>
+
+        <main>
+          {renderActiveView()}
+        </main>
+
+        <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} />
+      </div>
+    </div>
+  );
+};
+
+export default App;
