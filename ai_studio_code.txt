@@ -1,23 +1,202 @@
-import React from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
+import type { CollectedSong } from '../types';
 import { Rarity } from '../types';
+import { PauseIcon, PlayIcon, VolumeUpIcon } from './icons';
+import { getRarityStyles } from '../utils/rarity';
+import { UserContext } from '../contexts/UserContext';
 
-export const RarityFilter: React.FC<{ activeFilter: Rarity | 'All', setFilter: (filter: Rarity | 'All') => void }> = ({ activeFilter, setFilter }) => {
-  const filters: (Rarity | 'All')[] = ['All', Rarity.Common, Rarity.Uncommon, Rarity.Rare, Rarity.Mythic];
+const CreateTradeModal: React.FC<{ song: CollectedSong, onClose: () => void }> = ({ song, onClose }) => {
+    const { createTradePost } = useContext(UserContext)!;
+    const [seeking, setSeeking] = useState('');
+
+    const handleCreateTrade = () => {
+        if (!seeking.trim()) return;
+        createTradePost(song, seeking);
+        onClose();
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content w-full max-w-md bg-gray-800 rounded-lg p-6" onClick={e => e.stopPropagation()}>
+                <h3 className="text-2xl font-bold mb-4">Create Trade Post</h3>
+                <p className="text-gray-400 mb-2">You are offering:</p>
+                <div className="p-3 rounded-lg bg-gray-700/50 border border-gray-600 flex items-center gap-3 mb-4">
+                    <img src={song.song.albumArtUrl} alt={song.song.album} className="w-12 h-12 rounded-md object-cover"/>
+                    <div className="truncate">
+                        <p className="font-semibold text-white truncate">{song.song.title}</p>
+                        <p className="text-sm text-gray-400 truncate">{song.song.artist}</p>
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">What are you seeking in return?</label>
+                    <input 
+                        type="text" 
+                        value={seeking} 
+                        onChange={e => setSeeking(e.target.value)}
+                        placeholder="e.g., Any Mythic, Rare Rock songs..."
+                        className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500" 
+                    />
+                </div>
+                <div className="flex justify-end gap-3 mt-6">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-md">Cancel</button>
+                    <button onClick={handleCreateTrade} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-md">Post Trade</button>
+                </div>
+            </div>
+        </div>
+    )
+};
+
+
+export const SongPreviewModal: React.FC<{
+  collectedSong: CollectedSong;
+  onClose: () => void;
+  showTradeButton?: boolean;
+}> = ({ collectedSong, onClose, showTradeButton = false }) => {
+  const { song, serialNumber } = collectedSong;
+  const isMythic = song.rarity === Rarity.Mythic;
+  const rarityStyles = getRarityStyles(song.rarity);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isCreatingTrade, setIsCreatingTrade] = useState(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+    const handleTimeUpdate = () => {
+      if (audio.duration > 0) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+    };
+    const handleEnded = () => {
+        setIsPlaying(false);
+        setProgress(0);
+        audio.currentTime = 0;
+    };
+
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+    
+    // Auto-play on open
+    audio.play().catch(e => console.error("Autoplay was prevented:", e));
+
+    return () => {
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+      audio.pause();
+    };
+  }, [song.previewUrl]);
+  
+  const togglePlayPause = () => {
+    const audio = audioRef.current;
+    if (audio) {
+        if (isPlaying) {
+            audio.pause();
+        } else {
+            audio.play();
+        }
+    }
+  }
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+      const progressBar = e.currentTarget;
+      const audio = audioRef.current;
+      if (!audio || !audio.duration) return;
+
+      const rect = progressBar.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const width = rect.width;
+      const newTime = (clickX / width) * audio.duration;
+      audio.currentTime = newTime;
+  };
+
+  const RarityTag: React.FC = () => {
+    if (!isMythic) return null;
+    return (
+        <div className="absolute top-4 left-4 z-20">
+            <div className="bg-gradient-to-br from-yellow-300 to-amber-500 text-black text-xs font-bold px-3 py-1.5 rounded-md shadow-lg uppercase tracking-wider">
+                MYTHIC #{String(serialNumber).padStart(3, '0')}
+            </div>
+        </div>
+    );
+  };
+  
   return (
-    <div className="flex justify-center gap-2 mb-6 flex-wrap">
-      {filters.map(filter => (
+    <>
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content w-full max-w-sm bg-custom-tan rounded-lg shadow-2xl overflow-hidden relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <RarityTag />
+
         <button
-          key={filter}
-          onClick={() => setFilter(filter)}
-          className={`px-4 py-1.5 text-sm font-semibold rounded-full transition-colors ${
-            activeFilter === filter
-              ? 'bg-indigo-500 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
+          onClick={onClose}
+          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-black/20 hover:bg-black/40 rounded-full text-white/80 hover:text-white transition-colors z-20"
+          aria-label="Close song details"
         >
-          {filter}
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
-      ))}
+        
+        <div className="relative w-full aspect-square">
+            <img
+              src={song.albumArtUrl}
+              alt={song.album}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute bottom-0 left-0 right-0 h-2/3 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-6 flex flex-col justify-end">
+                <h2 className="font-bold text-4xl text-white mb-1 drop-shadow-lg" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{song.title}</h2>
+                <p className="text-xl text-white/90 drop-shadow-md">{song.artist}</p>
+                <p className="text-md text-white/70">{song.album}</p>
+                {song.releaseDate && <p className="text-md text-white/70">{song.releaseDate}</p>}
+                <p className={`text-md font-bold mt-1 ${rarityStyles.textColor} ${isMythic ? rarityStyles.textGradient : ''}`}>{song.rarity} {song.isShiny && '✨'}</p>
+            </div>
+        </div>
+
+        <div className="p-4 bg-[#DEDAD0] space-y-3">
+            <div className="flex items-center gap-4">
+                <button 
+                    onClick={togglePlayPause} 
+                    className="p-3 bg-green-500 hover:bg-green-600 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2 focus:ring-offset-[#DEDAD0]"
+                    aria-label={isPlaying ? 'Pause' : 'Play'}
+                >
+                    {isPlaying ? <PauseIcon className="w-6 h-6 text-white" /> : <PlayIcon className="w-6 h-6 text-white" />}
+                </button>
+                
+                <VolumeUpIcon className="w-6 h-6 text-gray-500" />
+                
+                <div className="relative w-full h-2 bg-gray-400/50 rounded-full cursor-pointer group" onClick={handleSeek}>
+                    <div className="absolute top-0 left-0 h-full bg-green-500 rounded-full" style={{ width: `${progress}%` }}></div>
+                    <div 
+                        className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-black rounded-full transition-opacity opacity-0 group-hover:opacity-100" 
+                        style={{ left: `calc(${progress}% - 8px)` }}
+                    ></div>
+                </div>
+            </div>
+
+            {showTradeButton && (
+                <button 
+                    onClick={() => setIsCreatingTrade(true)}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors"
+                >
+                    Create Trade
+                </button>
+            )}
+        </div>
+        
+        <audio ref={audioRef} src={song.previewUrl} preload="auto" />
+      </div>
     </div>
+    {isCreatingTrade && <CreateTradeModal song={collectedSong} onClose={() => { setIsCreatingTrade(false); onClose(); }} />}
+    </>
   );
 };
