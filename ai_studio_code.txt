@@ -1,181 +1,22 @@
-import { Song, Rarity, Artist } from '../types';
+class MythicSerialService {
+  private mythicCounts: Record<string, number>;
 
-const assignAttributes = (): { rarity: Rarity, isShiny: boolean } => {
-  const rarityRand = Math.random();
-  let rarity: Rarity;
-
-  if (rarityRand < 0.001) {       // 0.1% for Mythic
-    rarity = Rarity.Mythic;
-  } else if (rarityRand < 0.041) { // 4% for Rare
-    rarity = Rarity.Rare;
-  } else if (rarityRand < 0.241) { // 20% for Uncommon
-    rarity = Rarity.Uncommon;
-  } else {                         // 75.9% for Common
-    rarity = Rarity.Common;
+  constructor() {
+    this.mythicCounts = {};
   }
 
-  const isShiny = Math.random() < 0.01; // 1% chance for shiny
-
-  return { rarity, isShiny };
-};
-
-// Deezer API requires JSONP for client-side requests.
-const jsonp = (baseUrl: string, callbackName: string = `jsonp_${Date.now()}_${Math.ceil(Math.random() * 100000)}`): Promise<any> => {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        
-        (window as any)[callbackName] = (data: any) => {
-            delete (window as any)[callbackName];
-            document.body.removeChild(script);
-            resolve(data);
-        };
-
-        const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}output=jsonp&callback=${callbackName}`;
-        script.src = url;
-        script.onerror = (err) => {
-            delete (window as any)[callbackName];
-            document.body.removeChild(script);
-            reject(err);
-        };
-        
-        document.body.appendChild(script);
-    });
-};
-
-interface DeezerTrack {
-    id: number;
-    title: string;
-    artist: { name: string };
-    album: { title: string, cover_xl: string };
-    preview: string;
-    type: string;
-}
-
-interface DeezerArtist {
-    id: number;
-    name: string;
-    picture_medium: string;
-}
-
-// Helper to shuffle an array for better pack randomness
-const shuffleArray = <T>(array: T[]): T[] => {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-};
-
-export const searchArtists = async (query: string): Promise<Artist[]> => {
-    if (!query.trim()) return [];
-    const url = `https://api.deezer.com/search/artist?q=${encodeURIComponent(query)}&limit=10`;
-    try {
-        const data: { data: DeezerArtist[] } = await jsonp(url);
-        return data.data
-            .filter(item => item.id && item.name)
-            .map(item => ({
-                id: item.id.toString(),
-                name: item.name,
-                pictureUrl: item.picture_medium,
-            }));
-    } catch (error) {
-        console.error("Error searching for artists:", error);
-        throw new Error("Failed to search for artists. Please check your connection.");
-    }
-};
-
-export const searchSongs = async (query: string, favoriteArtists: Artist[] = []): Promise<Song[]> => {
-  const isPackOpening = !query;
-  
-  try {
-    let songsToProcess: DeezerTrack[] = [];
-
-    if (isPackOpening) {
-      const genres = [
-        'Pop', 'Rock', 'Hip-Hop', 'R&B', 'Electronic', 'Country', 'Jazz', 
-        'Classical', 'Reggae', 'Blues', 'Folk', 'Metal', 'Indie', 'Alternative', 
-        'K-Pop', 'Latin', 'Afrobeat', 'Dance', 'Funk', 'Gospel', 'Soundtrack'
-      ];
-      
-      const shuffledGenres = shuffleArray([...genres]);
-      const searchTerms = shuffledGenres.slice(0, Math.floor(Math.random() * 2) + 2); // 2 or 3 genres
-
-      // 5% chance to boost with a favorite artist, replacing one of the genres
-      if (favoriteArtists.length > 0 && Math.random() < 0.05) {
-          const randomFavArtist = favoriteArtists[Math.floor(Math.random() * favoriteArtists.length)];
-          searchTerms[searchTerms.length - 1] = randomFavArtist.name;
-      }
-      
-      const promises = searchTerms.map(term => {
-        const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(term)}&limit=100`;
-        return jsonp(url);
-      });
-      
-      const results = await Promise.all(promises);
-      const combinedRawSongs: DeezerTrack[] = results.flatMap(result => result.data || []);
-      songsToProcess = combinedRawSongs;
-
-    } else {
-        const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=25`;
-        const data: { data: DeezerTrack[] } = await jsonp(url);
-        songsToProcess = data.data;
-    }
-
-    let validSongs = songsToProcess.filter(item => 
-        item.type === 'track' && 
-        item.id &&
-        item.title &&
-        item.artist && item.artist.name &&
-        item.album && item.album.cover_xl &&
-        item.preview
-    );
-
-    if (validSongs.length === 0) {
-      return [];
-    }
-    
-    if (isPackOpening) {
-        const uniqueSongsMap = new Map<string, DeezerTrack>();
-        for (const song of validSongs) {
-            const key = `${song.title.toLowerCase().trim()}|${song.artist.name.toLowerCase().trim()}`;
-            if (!uniqueSongsMap.has(key)) {
-                uniqueSongsMap.set(key, song);
-            }
-        }
-        
-        let uniqueSongs = Array.from(uniqueSongsMap.values());
-
-        if (uniqueSongs.length < 5) {
-            if (uniqueSongs.length === 0) {
-                 throw new Error("Couldn't find any unique songs for a pack. The cosmos is unusually quiet today.");
-            }
-        }
-        
-        validSongs = shuffleArray(uniqueSongs).slice(0, 5);
-    }
-
-    const mappedSongs: Song[] = validSongs.map((item) => {
-      const { rarity, isShiny } = assignAttributes();
-      return {
-          id: item.id.toString(),
-          title: item.title,
-          artist: item.artist.name,
-          album: item.album.title,
-          albumArtUrl: item.album.cover_xl,
-          previewUrl: item.preview,
-          // releaseDate is not available in Deezer's search API, so it's omitted.
-          rarity,
-          isShiny,
-      };
-    });
-
-    return mappedSongs;
-
-  } catch (error) {
-    console.error("Error in music service:", error);
-    if (error instanceof TypeError) {
-        throw new Error("Failed to connect to the music service. Please check your internet connection.");
-    }
-    throw new Error(error instanceof Error ? error.message : "An unexpected error occurred while fetching music.");
+  getNextSerialNumber(songId: string): number {
+    const currentCount = this.mythicCounts[songId] || 0;
+    const nextSerialNumber = currentCount + 1;
+    this.mythicCounts[songId] = nextSerialNumber;
+    return nextSerialNumber;
   }
-};
+
+  // Optional: Method to reset counts if needed for debugging or new sessions
+  reset() {
+    this.mythicCounts = {};
+  }
+}
+
+// Export a singleton instance of the service
+export const mythicSerialService = new MythicSerialService();
