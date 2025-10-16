@@ -1,63 +1,63 @@
-import React, { useState, useContext } from 'react';
-import { PackageIcon } from './components/icons';
-import { BottomNavBar, Tab } from './components/BottomNavBar';
-import { PacksView } from './views/PacksView';
-import { CollectionView } from './views/CollectionView';
-import { TradeHubView } from './views/TradeHubView';
-import { FriendsView } from './views/FriendsView';
-import { FavoritesView } from './views/FavoritesView';
-import { UserContext } from './contexts/UserContext';
+export enum Rarity {
+  Common = 'Common',
+  Uncommon = 'Uncommon',
+  Rare = 'Rare',
+  Mythic = 'Mythic',
+}
 
-const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('packs');
-  const userContext = useContext(UserContext);
+export interface Song {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  albumArtUrl:string;
+  previewUrl: string;
+  releaseDate?: string;
+  rarity: Rarity;
+  isShiny: boolean;
+}
 
-  if (!userContext || !userContext.currentUser) {
-    return (
-        <div className="flex items-center justify-center min-h-screen">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-400"></div>
-        </div>
-    );
-  }
+export interface Artist {
+  id: string;
+  name: string;
+  pictureUrl?: string;
+}
 
-  const { currentUser } = userContext;
-  
-  const renderActiveView = () => {
-    switch (activeTab) {
-      case 'packs':
-        return <PacksView />;
-      case 'collection':
-        return <CollectionView user={currentUser} />;
-      case 'favorites':
-        return <FavoritesView />;
-      case 'trade':
-        return <TradeHubView />;
-      case 'friends':
-        return <FriendsView />;
-      default:
-        return <PacksView />;
-    }
-  }
+export interface CollectedSong {
+  id: string; // Unique instance ID
+  song: Song;
+  serialNumber?: number; // Only for Mythic songs
+  ownerId: string;
+}
 
-  return (
-    <div className="min-h-screen bg-gray-900 text-white font-sans p-4 sm:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-6 text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl flex items-center justify-center gap-3">
-            <PackageIcon className="w-10 h-10 text-indigo-400" />
-            PackTunes
-          </h1>
-          <p className="mt-3 text-lg text-gray-400">Collect your songs, build your legacy.</p>
-        </header>
+export interface User {
+  id: string;
+  name: string;
+  bio: string;
+  pfpUrl: string;
+  collection: CollectedSong[];
+  favoriteArtists: Artist[];
+  friendIds: string[];
+}
 
-        <main>
-          {renderActiveView()}
-        </main>
+export interface TradePost {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  ownerPfpUrl: string;
+  songToTrade: CollectedSong;
+  seeking: string; // A text description of what the user wants
+  offers: TradeOffer[];
+  status: 'open' | 'closed';
+  createdAt: number;
+}
 
-        <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} />
-      </div>
-    </div>
-  );
-};
-
-export default App;
+export interface TradeOffer {
+  id: string;
+  tradeId: string;
+  offeredById: string;
+  offeredByName: string;
+  offeredByPfpUrl: string;
+  songsOffered: CollectedSong[];
+  status: 'pending' | 'accepted' | 'declined';
+}
